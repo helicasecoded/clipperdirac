@@ -1,0 +1,67 @@
+name: Build APK
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Project dhundo (zip ho to unzip karo)
+        id: proj
+        run: |
+          if [ -f settings.gradle.kts ]; then
+            DIR="."
+          else
+            ZIP=$(ls *.zip 2>/dev/null | head -n 1 || true)
+            if [ -z "$ZIP" ]; then
+              echo "Repo me koi .zip ya project files nahi mili"
+              exit 1
+            fi
+            echo "Unzipping $ZIP"
+            mkdir -p work
+            unzip -q -o "$ZIP" -d work
+            FOUND=$(find work -maxdepth 3 -name settings.gradle.kts | head -n 1)
+            if [ -z "$FOUND" ]; then
+              echo "Zip ke andar settings.gradle.kts nahi mila"
+              exit 1
+            fi
+            DIR=$(dirname "$FOUND")
+          fi
+          echo "Project folder: $DIR"
+          echo "dir=$DIR" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.9"
+
+      - name: Build debug APK
+        working-directory: ${{ steps.proj.outputs.dir }}
+        run: gradle assembleDebug --no-daemon --stacktrace
+
+      - name: Rename APK
+        run: cp "${{ steps.proj.outputs.dir }}/app/build/outputs/apk/debug/app-debug.apk" "$GITHUB_WORKSPACE/Clipperdirac.apk"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Clipperdirac-apk
+          path: Clipperdirac.apk
+
+      - name: Publish release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v1.0.${{ github.run_number }}
+          name: Clipperdirac v1.0.${{ github.run_number }}
+          files: Clipperdirac.apk
